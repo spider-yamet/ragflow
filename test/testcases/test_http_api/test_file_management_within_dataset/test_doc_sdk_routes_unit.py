@@ -1167,3 +1167,46 @@ class TestDocRoutesUnit:
         res = _run(module.retrieval_test.__wrapped__("tenant-1"))
         assert res["code"] == module.RetCode.DATA_ERROR
         assert "No chunk found! Check the chunk status please!" in res["message"]
+
+    def test_retrieval_resolves_accessible_datasets_when_dataset_ids_missing(self, monkeypatch):
+        module = _load_doc_module(monkeypatch)
+        resolution_call = {}
+
+        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"question": "   "}))
+        monkeypatch.setattr(module.TenantService, "get_joined_tenants_by_user_id", lambda _user_id: [{"tenant_id": "tenant-2"}])
+
+        def _get_list(joined_tenant_ids, user_id, page_number, items_per_page, orderby, desc, id, name, keywords, parser_id=None):
+            resolution_call["joined_tenant_ids"] = joined_tenant_ids
+            resolution_call["user_id"] = user_id
+            resolution_call["page_number"] = page_number
+            resolution_call["items_per_page"] = items_per_page
+            return ([{"id": "ds-1"}, {"id": "ds-2"}], 2)
+
+        monkeypatch.setattr(module.KnowledgebaseService, "get_list", _get_list)
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
+        monkeypatch.setattr(
+            module.KnowledgebaseService,
+            "get_by_ids",
+            lambda ids: [SimpleNamespace(embd_id="m1", tenant_id="tenant-1") for _ in ids],
+        )
+        monkeypatch.setattr(module.TenantLLMService, "split_model_name_and_factory", lambda embd_id: (embd_id, "f"))
+
+        res = _run(module.retrieval_test.__wrapped__("tenant-1"))
+
+        assert resolution_call["joined_tenant_ids"] == ["tenant-1", "tenant-2"]
+        assert resolution_call["user_id"] == "tenant-1"
+        assert resolution_call["page_number"] == 1
+        assert resolution_call["items_per_page"] == module.RETRIEVAL_DATASET_LIST_PAGE_SIZE
+        assert res["code"] == 0
+        assert res["data"]["chunks"] == []
+
+    def test_retrieval_returns_error_when_no_accessible_datasets_exist(self, monkeypatch):
+        module = _load_doc_module(monkeypatch)
+
+        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"dataset_ids": [], "question": "q"}))
+        monkeypatch.setattr(module.TenantService, "get_joined_tenants_by_user_id", lambda _user_id: [])
+        monkeypatch.setattr(module.KnowledgebaseService, "get_list", lambda *_args, **_kwargs: ([], 0))
+
+        res = _run(module.retrieval_test.__wrapped__("tenant-1"))
+
+        assert "No accessible datasets found." in res["message"]
