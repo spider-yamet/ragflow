@@ -220,7 +220,7 @@ async def async_chat_solo(dialog, messages, stream=True):
         else:
             text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
         attachments = "\n\n".join(text_attachments)
-    model_config = get_model_config_by_id(dialog.tenant_llm_id)
+    model_config = get_model_config_by_id(dialog.tenant_llm_id, LLMType.CHAT)
     chat_mdl = LLMBundle(dialog.tenant_id, model_config)
     factory = model_config.get("llm_factory", "") if model_config else ""
 
@@ -270,7 +270,7 @@ def get_models(dialog):
             raise LookupError("Embedding model(%s) not found" % embedding_list[0])
 
     if dialog.tenant_llm_id:
-        chat_model_config = get_model_config_by_id(dialog.tenant_llm_id)
+        chat_model_config = get_model_config_by_id(dialog.tenant_llm_id, LLMType.CHAT)
     elif dialog.llm_id:
         chat_model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
     else:
